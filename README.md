@@ -1,2 +1,55 @@
 # Save
-Una app para finanzas personales 
+
+App Android minimalista para finanzas personales: un presupuesto mensual tipo calculadora donde
+registras lo que entra y lo que sale, y ves en todo momento cuánto tienes en **banco**,
+en **efectivo** y en tus **fondos**.
+
+## Qué hace
+
+- **Ingresos y gastos, fijos o variables.** Los fijos (sueldo, renta, suscripciones…) se repiten
+  cada mes. Aparecen como *pendientes* hasta que los marcas con ✓, así puedes ver lo estimado
+  y lo real por separado.
+- **Flujo del mes** = ingresos − gastos − lo que mandaste a fondos. Se muestra el real y el
+  estimado al cierre del mes, contando los fijos pendientes.
+- **Banco o efectivo.** Cada movimiento indica de dónde sale o a dónde entra el dinero. Con
+  *Mover* registras retiros del cajero o depósitos (banco ↔ efectivo).
+- **Fondos de ahorro y de emergencia**, con meta opcional y barra de progreso. Los aportes salen
+  de banco o efectivo y los retiros regresan ahí.
+- **Presupuesto mensual:** un límite de gastos con lo que te queda. Aplica al mes en que lo
+  defines y a los siguientes.
+- **Saldos acumulados** mes a mes, partiendo del saldo inicial que configures.
+- **Teclado de calculadora** al capturar montos (`1200+350`, `3×150`…).
+- **Respaldo**: exportar e importar todos los datos en un archivo JSON.
+- **Actualizaciones dentro de la app:** busca la última release de GitHub, descarga el APK y abre
+  el instalador.
+
+Los datos se guardan solo en el teléfono y la app no los envía a ningún lado.
+
+## Publicar una versión nueva
+
+Cada push compila el APK y lo deja como *artifact* en GitHub Actions. Para publicar una
+**release** que la app pueda descargar:
+
+- **Desde GitHub:** Actions → *Android* → *Run workflow* → escribe la versión (ej. `1.1.0`).
+- **Desde git:** `git tag v1.1.0 && git push origin v1.1.0`.
+
+El número de versión tiene que ser mayor que el anterior, porque así la app detecta que hay una
+actualización.
+
+> **Importante:** si el repositorio es privado, la app no puede ver sus releases, ya que la API
+> pública de GitHub responde 404. Para que la actualización automática funcione, hay dos opciones:
+> hacer público el repositorio, o publicar las releases en un repositorio público aparte y compilar con
+> `-PupdateRepo=usuario/repo`.
+
+## Firma
+
+Todas las versiones se firman con la misma llave (`keystore/save.jks`), así que cada APK nuevo
+se instala encima del anterior sin borrar tus datos. Si cambias esta llave, vas a tener que
+desinstalar la app; antes exporta un respaldo.
+
+## Desarrollo
+
+- Kotlin + Jetpack Compose (Material 3), minSdk 26.
+- La lógica de cálculo está en `app/src/main/java/com/save/finanzas/domain` y tiene pruebas en
+  `app/src/test`.
+- `./gradlew testReleaseUnitTest assembleRelease` (requiere el Android SDK).
