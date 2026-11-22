@@ -20,12 +20,17 @@ fun FundsScreen(
     onWithdraw: (Fund) -> Unit,
     onSaveFund: (Fund) -> Unit,
     onDeleteFund: (Fund) -> Unit,
+    onSaveAccount: (MoneyAccount) -> Unit,
+    onDeleteAccount: (MoneyAccount) -> Unit,
+    canDeleteAccount: (MoneyAccount) -> Boolean,
     newId: () -> String,
 ) {
     val cur = data.settings.currency
     val bal = remember(data) { balances(data, null) }
     var editing by remember { mutableStateOf<Fund?>(null) }
     var creating by remember { mutableStateOf(false) }
+    var editingAccount by remember { mutableStateOf<MoneyAccount?>(null) }
+    var creatingAccount by remember { mutableStateOf(false) }
 
     LazyColumn(
         contentPadding = PaddingValues(
@@ -37,11 +42,35 @@ fun FundsScreen(
     ) {
         item {
             Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                SectionLabel("Total en fondos")
+                SectionLabel("Todo tu dinero")
                 Spacer(Modifier.height(6.dp))
-                Text(formatMoney(bal.fundsTotal, cur), style = MaterialTheme.typography.displayMedium, color = Tone.save)
+                Text(formatMoney(bal.total, cur), style = MaterialTheme.typography.displayMedium)
+                Text(
+                    "Banco ${formatMoney(bal.bank, cur)} · Efectivo ${formatMoney(bal.cash, cur)} · Fondos ${formatMoney(bal.fundsTotal, cur)}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
+
+        item { SectionLabel("Cuentas", Modifier.padding(top = 8.dp)) }
+        items(data.accounts, key = { "a" + it.id }) { a ->
+            val b = bal.accounts[a.id] ?: 0
+            Tile(Modifier.fillMaxWidth(), onClick = { editingAccount = a }) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(a.name, style = MaterialTheme.typography.titleMedium)
+                        Text(a.type.label(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Text(formatMoney(b, cur), style = MaterialTheme.typography.headlineSmall, color = if (b < 0) Tone.expense else androidx.compose.ui.graphics.Color.Unspecified)
+                }
+            }
+        }
+        item {
+            OutlinedButton(onClick = { creatingAccount = true }, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Nueva cuenta") }
+        }
+
+        item { SectionLabel("Fondos", Modifier.padding(top = 16.dp)) }
         if (data.funds.isEmpty()) {
             item {
                 Text(
@@ -87,6 +116,21 @@ fun FundsScreen(
         item {
             OutlinedButton(onClick = { creating = true }, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("Nuevo fondo") }
         }
+    }
+
+    if (creatingAccount || editingAccount != null) {
+        val ea = editingAccount
+        AccountDialog(
+            initial = ea,
+            symbol = cur,
+            canDelete = ea != null && canDeleteAccount(ea),
+            onDismiss = { creatingAccount = false; editingAccount = null },
+            onSave = { name, type, initial ->
+                onSaveAccount((ea ?: MoneyAccount(newId(), name)).copy(name = name, type = type, initial = initial))
+                creatingAccount = false; editingAccount = null
+            },
+            onDelete = { if (ea != null) onDeleteAccount(ea); editingAccount = null },
+        )
     }
 
     if (creating || editing != null) {
@@ -145,6 +189,55 @@ private fun FundDialog(
                     TextButton(onClick = { if (askDelete) onDelete() else askDelete = true }) {
                         Text(if (askDelete) "Sí, eliminar" else "Eliminar", color = MaterialTheme.colorScheme.error)
                     }
+                }
+                TextButton(onClick = onDismiss) { Text("Cancelar") }
+            }
+        },
+    )
+}
+
+@Composable
+private fun AccountDialog(
+    initial: MoneyAccount?,
+    symbol: String,
+    canDelete: Boolean,
+    onDismiss: () -> Unit,
+    onSave: (String, Account, Long) -> Unit,
+    onDelete: () -> Unit,
+) {
+    var name by remember { mutableStateOf(initial?.name ?: "") }
+    var type by remember { mutableStateOf(initial?.type ?: Account.BANK) }
+    var start by remember { mutableStateOf(centsToInput(initial?.initial ?: 0)) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (initial == null) "Nueva cuenta" else "Editar cuenta") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(name, { name = it }, label = { Text("Nombre (ej. BBVA, Revolut)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Segmented(listOf(Account.BANK to "Banco", Account.CASH to "Efectivo"), type, { type = it })
+                MoneyField(start, { start = it }, "Saldo al empezar", symbol)
+                Text(
+                    "Lo que tenía esta cuenta antes de registrar movimientos.",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (initial != null && !canDelete) {
+                    Text(
+                        "Para eliminarla no debe tener movimientos y debe quedar al menos otra cuenta.",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(name.trim(), type, Calc.evalCents(start) ?: 0) }, enabled = name.isNotBlank()) { Text("Guardar") }
+        },
+        dismissButton = {
+            Row {
+                if (initial != null && canDelete) {
+                    TextButton(onClick = onDelete) { Text("Eliminar", color = MaterialTheme.colorScheme.error) }
                 }
                 TextButton(onClick = onDismiss) { Text("Cancelar") }
             }

@@ -37,7 +37,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val store = Store(app.filesDir)
     private val saveLock = Mutex()
 
-    private val _data = MutableStateFlow(store.load())
+    private val _data = MutableStateFlow(store.load().let { raw ->
+        raw.migrated().also { if (it != raw) store.save(it) }
+    })
     val data: StateFlow<AppData> = _data.asStateFlow()
 
     private val _month = MutableStateFlow(YearMonth.now())
@@ -102,6 +104,46 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         d.copy(funds = d.funds.filterNot { it.id == id }, movements = d.movements.filterNot { it.fundId == id })
     }
 
+    // ---- Cuentas ----
+    fun defaultAccountId(): String =
+        (_data.value.accounts.firstOrNull { it.type == Account.BANK } ?: _data.value.accounts.firstOrNull())?.id ?: ""
+
+    fun upsertAccount(a: MoneyAccount) = edit { d ->
+        val exists = d.accounts.any { it.id == a.id }
+        d.copy(accounts = if (exists) d.accounts.map { if (it.id == a.id) a else it } else d.accounts + a)
+    }
+
+    /** Solo se puede borrar una cuenta sin movimientos y que no sea la última. */
+    fun canDeleteAccount(id: String): Boolean {
+        val d = _data.value
+        return d.accounts.size > 1 && d.movements.none { it.accountId == id || it.toAccountId == id }
+    }
+
+    fun deleteAccount(id: String) {
+        if (!canDeleteAccount(id)) return
+        edit { d -> d.copy(accounts = d.accounts.filterNot { it.id == id }) }
+    }
+
+    // ---- Etiquetas ----
+    /** Crea una etiqueta con el color menos usado entre las de su tipo. */
+    fun createTag(name: String, kind: Kind): Tag {
+        val d = _data.value
+        val used = d.tags.filter { it.kind == kind }.groupingBy { it.color }.eachCount()
+        val slot = (0 until PALETTE_SIZE).minBy { used[it] ?: 0 }
+        val t = Tag(newId(), name.trim(), kind, slot)
+        edit { it.copy(tags = it.tags + t) }
+        return t
+    }
+
+    fun upsertTag(t: Tag) = edit { d -> d.copy(tags = d.tags.map { if (it.id == t.id) t else it }) }
+
+    fun deleteTag(id: String) = edit { d ->
+        d.copy(
+            tags = d.tags.filterNot { it.id == id },
+            movements = d.movements.map { if (it.tagId == id) it.copy(tagId = null) else it },
+        )
+    }
+
     // ---- Ajustes ----
     fun setBudget(m: YearMonth, cents: Long?) = edit { d ->
         val b = d.settings.budgets.toMutableMap()
@@ -123,7 +165,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             getApplication<Application>().contentResolver.openInputStream(uri)?.use { it.readBytes().decodeToString() }
                 ?: error("No se pudo leer el archivo")
         }
-        val parsed = Store.decode(text)
+        val parsed = Store.decode(text).migrated()
         edit { parsed }
     }
 

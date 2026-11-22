@@ -3,7 +3,10 @@ package com.save.finanzas.ui
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -16,6 +19,7 @@ import com.save.finanzas.update.Updater
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(
     data: AppData,
@@ -28,13 +32,16 @@ fun SettingsScreen(
     onExport: suspend (Uri) -> Unit,
     onImport: suspend (Uri) -> Unit,
     onMessage: (String) -> Unit,
+    onCreateTag: (String, Kind) -> Unit,
+    onRenameTag: (Tag) -> Unit,
+    onDeleteTag: (Tag) -> Unit,
 ) {
     val s = data.settings
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var currency by remember(s.currency) { mutableStateOf(s.currency) }
-    var bank by remember(s.initialBank) { mutableStateOf(centsToInput(s.initialBank)) }
-    var cash by remember(s.initialCash) { mutableStateOf(centsToInput(s.initialCash)) }
+    var editTag by remember { mutableStateOf<Tag?>(null) }
+    var newTagKind by remember { mutableStateOf<Kind?>(null) }
     var confirmImport by remember { mutableStateOf<Uri?>(null) }
 
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
@@ -67,28 +74,39 @@ fun SettingsScreen(
             modifier = Modifier.fillMaxWidth(),
         )
 
-        SectionLabel("Saldo inicial", Modifier.padding(top = 8.dp))
+        Button(
+            onClick = {
+                onSaveSettings(s.copy(currency = currency.ifBlank { "$" }))
+                onMessage("Ajustes guardados")
+            },
+            enabled = currency != s.currency,
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+        ) { Text("Guardar") }
         Text(
-            "Lo que ya tenías antes de empezar a registrar.",
+            "El saldo inicial de cada cuenta se configura en la pestaña Cuentas.",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        SectionLabel("Etiquetas", Modifier.padding(top = 16.dp))
+        Text(
+            "Toca una etiqueta para renombrarla o eliminarla.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        MoneyField(bank, { bank = it }, "En banco", currency)
-        MoneyField(cash, { cash = it }, "En efectivo", currency)
-
-        Button(
-            onClick = {
-                onSaveSettings(
-                    s.copy(
-                        currency = currency.ifBlank { "$" },
-                        initialBank = Calc.evalCents(bank) ?: 0,
-                        initialCash = Calc.evalCents(cash) ?: 0,
+        listOf(Kind.EXPENSE to "Gastos", Kind.INCOME to "Ingresos").forEach { (kind, title) ->
+            Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 4.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                data.tags.filter { it.kind == kind }.forEach { t ->
+                    AssistChip(
+                        onClick = { editTag = t },
+                        label = { Text(t.name) },
+                        leadingIcon = { Box(Modifier.size(8.dp).clip(CircleShape).background(tagColor(t.color))) },
                     )
-                )
-                onMessage("Ajustes guardados")
-            },
-            modifier = Modifier.fillMaxWidth().height(48.dp),
-        ) { Text("Guardar ajustes") }
+                }
+                AssistChip(onClick = { newTagKind = kind }, label = { Text("+ Nueva") })
+            }
+        }
 
         SectionLabel("Respaldo", Modifier.padding(top = 16.dp))
         Text(
@@ -140,6 +158,41 @@ fun SettingsScreen(
             }
         }
         Spacer(Modifier.height(24.dp))
+    }
+
+    newTagKind?.let { kind ->
+        NameDialog(
+            title = if (kind == Kind.INCOME) "Nueva etiqueta de ingreso" else "Nueva etiqueta de gasto",
+            onDismiss = { newTagKind = null },
+            onSave = { onCreateTag(it, kind); newTagKind = null },
+        )
+    }
+
+    editTag?.let { t ->
+        var name by remember(t.id) { mutableStateOf(t.name) }
+        AlertDialog(
+            onDismissRequest = { editTag = null },
+            title = { Text("Editar etiqueta") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(name, { name = it }, singleLine = true, label = { Text("Nombre") }, modifier = Modifier.fillMaxWidth())
+                    Text(
+                        "Si la eliminas, sus movimientos quedan sin etiqueta.",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { onRenameTag(t.copy(name = name.trim())); editTag = null }, enabled = name.isNotBlank()) { Text("Guardar") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { onDeleteTag(t); editTag = null }) { Text("Eliminar", color = MaterialTheme.colorScheme.error) }
+                    TextButton(onClick = { editTag = null }) { Text("Cancelar") }
+                }
+            },
+        )
     }
 
     confirmImport?.let { uri ->
