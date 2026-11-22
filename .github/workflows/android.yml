@@ -1,0 +1,76 @@
+name: Android
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Versión a publicar (ej. 1.2.0). Déjalo vacío para solo compilar.'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Calcular versión
+        id: ver
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          RUN: ${{ github.run_number }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            V="${GITHUB_REF_NAME#v}"; REL=true
+          elif [[ -n "$INPUT_VERSION" ]]; then
+            V="${INPUT_VERSION#v}"; REL=true
+          else
+            V="0.0.0-dev.$RUN"; REL=false
+          fi
+          if [[ "$REL" == true && ! "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::La versión debe ser tipo 1.2.3 (recibido: $V)"; exit 1
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "release=$REL" >> "$GITHUB_OUTPUT"
+
+      - name: Pruebas
+        run: ./gradlew --no-daemon testReleaseUnitTest -PappVersion=${{ steps.ver.outputs.version }}
+
+      - name: Compilar APK
+        run: |
+          ./gradlew --no-daemon assembleRelease -PappVersion=${{ steps.ver.outputs.version }}
+          cp app/build/outputs/apk/release/app-release.apk "Save-${{ steps.ver.outputs.version }}.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Save-${{ steps.ver.outputs.version }}
+          path: Save-*.apk
+
+      - name: Publicar release
+        if: steps.ver.outputs.release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: Save ${{ steps.ver.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          files: Save-*.apk
+          generate_release_notes: true
+          make_latest: true

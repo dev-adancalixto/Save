@@ -1,0 +1,5 @@
+<resources>
+    <style name="Theme.Save" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#FAFAF8</item>
+    </style>
+</resources>
