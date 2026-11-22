@@ -14,7 +14,7 @@ class FinanceTest {
         id: String, kind: Kind, amount: Long, nature: Nature = Nature.VARIABLE,
         month: String = "2026-11", account: Account = Account.BANK, paid: Set<String> = emptySet(),
         fundId: String? = null, to: Account? = null, end: String? = null,
-    ) = Movement(id, kind, amount, account, to, nature, month, endMonth = end, paidMonths = paid, fundId = fundId)
+    ) = Movement(id = id, kind = kind, amount = amount, account = account, toAccount = to, nature = nature, month = month, endMonth = end, paidMonths = paid, fundId = fundId)
 
     @Test
     fun calculator() {
@@ -53,7 +53,7 @@ class FinanceTest {
             ),
             funds = listOf(Fund("f1", "Emergencia", FundType.EMERGENCY)),
             settings = Settings(initialBank = 100000, budgets = mapOf("2026-10" to 1000000)),
-        )
+        ).migrated()
         val s = summarize(data, nov)
         assertEquals(2050000L, s.real.income)
         assertEquals(140000L, s.real.expense)
@@ -73,12 +73,20 @@ class FinanceTest {
         assertEquals(60000L, s.balances.cash)
         assertEquals(100000L, s.balances.funds["f1"])
 
+        // Saldo inicial + flujo = saldo final
+        assertEquals(100000L, s.opening)
+        assertEquals(s.balances.available, s.closing)
+        assertEquals(1910000L, s.closing)
+
         // Diciembre: el salario fijo aparece pero no está confirmado
         val d = summarize(data, dec)
         assertEquals(0L, d.real.income)
         assertEquals(2000000L, d.estimated.income)
         assertTrue(d.variable.isEmpty())
         assertEquals(s.balances, d.balances)
+        // Lo que sobró en noviembre es el saldo inicial de diciembre
+        assertEquals(s.closing, d.opening)
+        assertEquals(d.opening + 2000000L - 800000L, d.closingEstimated)
     }
 
     @Test
@@ -89,7 +97,59 @@ class FinanceTest {
         assertFalse(m.appliesTo(dec))
         assertFalse(m.appliesTo(YearMonth.of(2026, 8)))
         // diciembre está fuera de rango, no cuenta
-        assertEquals(-100000L, balances(AppData(movements = listOf(m)), null).bank)
+        assertEquals(-100000L, balances(AppData(movements = listOf(m)).migrated(), null).bank)
+    }
+
+    @Test
+    fun multipleAccountsAndTags() {
+        val data = AppData(
+            version = DATA_VERSION,
+            accounts = listOf(
+                MoneyAccount("bbva", "BBVA", Account.BANK, 500000),
+                MoneyAccount("revolut", "Revolut", Account.BANK),
+                MoneyAccount("cash", "Efectivo", Account.CASH, 10000),
+            ),
+            tags = listOf(Tag("comida", "Comida"), Tag("casa", "Casa", color = 1)),
+            movements = listOf(
+                Movement("1", Kind.EXPENSE, 30000, accountId = "bbva", tagId = "comida", month = "2026-11"),
+                Movement("2", Kind.EXPENSE, 10000, accountId = "cash", tagId = "comida", month = "2026-11"),
+                Movement("3", Kind.EXPENSE, 60000, accountId = "revolut", tagId = "casa", month = "2026-11"),
+                Movement("4", Kind.EXPENSE, 5000, accountId = "cash", month = "2026-11"),
+                Movement("5", Kind.TRANSFER, 200000, accountId = "bbva", toAccountId = "revolut", month = "2026-11"),
+            ),
+        )
+        val b = balances(data, nov)
+        assertEquals(270000L, b.accounts["bbva"])
+        assertEquals(140000L, b.accounts["revolut"])
+        assertEquals(-5000L, b.accounts["cash"])
+        assertEquals(410000L, b.bank)
+        assertEquals(-5000L, b.cash)
+
+        val parts = breakdown(data, nov, Kind.EXPENSE)
+        assertEquals(listOf(Slice("casa", 60000), Slice("comida", 40000), Slice(null, 5000)), parts)
+    }
+
+    @Test
+    fun migrationFromV1() {
+        val old = AppData(
+            version = 1,
+            movements = listOf(
+                Movement("a", Kind.INCOME, 1000, account = Account.CASH, month = "2026-11"),
+                Movement("b", Kind.TRANSFER, 500, account = Account.BANK, toAccount = Account.CASH, month = "2026-11"),
+            ),
+            settings = Settings(initialBank = 7000, initialCash = 300),
+        ).migrated()
+        assertEquals(DATA_VERSION, old.version)
+        assertEquals(listOf("bank", "cash"), old.accounts.map { it.id })
+        assertEquals(7000L, old.accounts[0].initial)
+        assertEquals("cash", old.movements[0].accountId)
+        assertEquals("cash", old.movements[1].toAccountId)
+        assertTrue(old.tags.isNotEmpty())
+        val b = balances(old, null)
+        assertEquals(6500L, b.bank)
+        assertEquals(1800L, b.cash)
+        // Volver a migrar no cambia nada
+        assertEquals(old, old.migrated())
     }
 
     @Test

@@ -11,8 +11,13 @@ en **efectivo** y en tus **fondos**.
   y lo real por separado.
 - **Flujo del mes** = ingresos − gastos − lo que mandaste a fondos. Se muestra el real y el
   estimado al cierre del mes, contando los fijos pendientes.
-- **Banco o efectivo.** Cada movimiento indica de dónde sale o a dónde entra el dinero. Con
-  *Mover* registras retiros del cajero o depósitos (banco ↔ efectivo).
+- **Saldo que se arrastra:** saldo inicial + flujo = saldo final, y ese saldo final es el saldo
+  inicial del mes siguiente.
+- **Varias cuentas** (BBVA, Revolut, Stori, Efectivo…), cada una de tipo banco o efectivo y con
+  su saldo inicial. Cada movimiento indica de qué cuenta sale o a cuál entra. Con *Mover* pasas
+  dinero entre cuentas (por ejemplo, un retiro del cajero).
+- **Etiquetas** para ingresos y gastos (Comida, Transporte, Sueldo…), con una gráfica del
+  porcentaje que representa cada una en el mes.
 - **Fondos de ahorro y de emergencia**, con meta opcional y barra de progreso. Los aportes salen
   de banco o efectivo y los retiros regresan ahí.
 - **Presupuesto mensual:** un límite de gastos con lo que te queda. Aplica al mes en que lo

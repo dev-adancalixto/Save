@@ -41,9 +41,17 @@ data class Totals(val income: Long = 0, val expense: Long = 0, val saved: Long =
 
 data class Entry(val movement: Movement, val pending: Boolean)
 
-data class Balances(val bank: Long, val cash: Long, val funds: Map<String, Long>) {
+data class Balances(
+    /** Saldo por cuenta (id -> centavos). */
+    val accounts: Map<String, Long>,
+    val bank: Long,
+    val cash: Long,
+    val funds: Map<String, Long>,
+) {
     val fundsTotal: Long get() = funds.values.sum()
-    val total: Long get() = bank + cash + fundsTotal
+    /** Dinero disponible (cuentas, sin fondos). */
+    val available: Long get() = bank + cash
+    val total: Long get() = available + fundsTotal
 }
 
 data class MonthSummary(
@@ -57,6 +65,8 @@ data class MonthSummary(
     val fixedExpense: Long,
     val variableExpense: Long,
     val budget: Long?,
+    /** Saldo inicial del mes = lo disponible al cierre del mes anterior. */
+    val opening: Long,
     /** Saldos acumulados al cierre del mes. */
     val balances: Balances,
     val fixed: List<Entry>,
@@ -64,6 +74,9 @@ data class MonthSummary(
 ) {
     val budgetLeft: Long? get() = budget?.let { it - real.expense }
     val budgetLeftEstimated: Long? get() = budget?.let { it - estimated.expense }
+    /** Saldo final = saldo inicial + flujo. Pasa como saldo inicial del siguiente mes. */
+    val closing: Long get() = opening + real.flow
+    val closingEstimated: Long get() = opening + estimated.flow
 }
 
 fun budgetFor(settings: Settings, m: YearMonth): Long? {
@@ -77,36 +90,49 @@ fun budgetFor(settings: Settings, m: YearMonth): Long? {
 
 /** Saldos acumulados (solo movimientos reales) hasta `upTo` inclusive; null = todo. */
 fun balances(data: AppData, upTo: YearMonth?): Balances {
-    var bank = data.settings.initialBank
-    var cash = data.settings.initialCash
+    val acc = data.accounts.associate { it.id to it.initial }.toMutableMap()
     val funds = data.funds.associate { it.id to 0L }.toMutableMap()
 
-    fun add(acc: Account, v: Long) {
-        if (acc == Account.BANK) bank += v else cash += v
-    }
+    fun add(id: String, v: Long) { acc[id] = (acc[id] ?: 0) + v }
 
     for (mv in data.movements) {
         val times = mv.realMonthsUpTo(upTo).size.toLong()
         if (times == 0L) continue
         val v = mv.amount * times
         when (mv.kind) {
-            Kind.INCOME -> add(mv.account, v)
-            Kind.EXPENSE -> add(mv.account, -v)
+            Kind.INCOME -> add(mv.accountId, v)
+            Kind.EXPENSE -> add(mv.accountId, -v)
             Kind.SAVE -> {
-                add(mv.account, -v)
+                add(mv.accountId, -v)
                 mv.fundId?.let { funds[it] = (funds[it] ?: 0) + v }
             }
             Kind.WITHDRAW -> {
-                add(mv.account, v)
+                add(mv.accountId, v)
                 mv.fundId?.let { funds[it] = (funds[it] ?: 0) - v }
             }
             Kind.TRANSFER -> {
-                add(mv.account, -v)
-                add(mv.toAccount ?: Account.CASH, v)
+                add(mv.accountId, -v)
+                mv.toAccountId?.let { add(it, v) }
             }
         }
     }
-    return Balances(bank, cash, funds)
+    val types = data.accounts.associate { it.id to it.type }
+    val bank = acc.filter { (types[it.key] ?: Account.BANK) == Account.BANK }.values.sum()
+    val cash = acc.filter { types[it.key] == Account.CASH }.values.sum()
+    return Balances(acc, bank, cash, funds)
+}
+
+data class Slice(val tagId: String?, val amount: Long)
+
+/** Reparto por etiqueta de los ingresos o gastos del mes, de mayor a menor. */
+fun breakdown(data: AppData, m: YearMonth, kind: Kind, includePending: Boolean = false): List<Slice> {
+    val known = data.tags.map { it.id }.toSet()
+    return data.movements
+        .filter { it.kind == kind && (if (includePending) it.appliesTo(m) else it.isRealIn(m)) }
+        .groupBy { it.tagId?.takeIf { id -> id in known } }
+        .map { (tag, list) -> Slice(tag, list.sumOf { it.amount }) }
+        .filter { it.amount > 0 }
+        .sortedByDescending { it.amount }
 }
 
 fun summarize(data: AppData, m: YearMonth): MonthSummary {
@@ -140,6 +166,7 @@ fun summarize(data: AppData, m: YearMonth): MonthSummary {
         fixedExpense = fe,
         variableExpense = ve,
         budget = budgetFor(data.settings, m),
+        opening = balances(data, m.minusMonths(1)).available,
         balances = balances(data, m),
         fixed = fixed,
         variable = variable,

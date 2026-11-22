@@ -10,7 +10,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Backspace
-import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -38,6 +37,10 @@ fun MovementSheet(
     request: SheetRequest,
     month: YearMonth,
     funds: List<Fund>,
+    accounts: List<MoneyAccount>,
+    tags: List<Tag>,
+    defaultAccountId: String,
+    onCreateTag: (String, Kind) -> Tag,
     symbol: String,
     newId: () -> String,
     defaultDay: Int,
@@ -61,7 +64,12 @@ fun MovementSheet(
     var withdraw by remember { mutableStateOf(startKind == Kind.WITHDRAW) }
     var expr by remember { mutableStateOf(ex?.let { centsToInput(it.amount) } ?: "") }
     var nature by remember { mutableStateOf(ex?.nature ?: Nature.VARIABLE) }
-    var account by remember { mutableStateOf(ex?.account ?: Account.BANK) }
+    var accountId by remember { mutableStateOf(ex?.accountId ?: defaultAccountId) }
+    var toAccountId by remember {
+        mutableStateOf(ex?.toAccountId ?: accounts.firstOrNull { it.id != (ex?.accountId ?: defaultAccountId) }?.id)
+    }
+    var tagId by remember { mutableStateOf(ex?.tagId) }
+    var newTag by remember { mutableStateOf(false) }
     var fundId by remember { mutableStateOf(ex?.fundId ?: request.fundId ?: funds.firstOrNull()?.id) }
     var note by remember { mutableStateOf(ex?.note ?: "") }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -74,7 +82,13 @@ fun MovementSheet(
         Mode.TRANSFER -> Kind.TRANSFER
     }
     val allowsFixed = kind == Kind.INCOME || kind == Kind.EXPENSE || kind == Kind.SAVE
-    val valid = cents != null && cents > 0 && (mode != Mode.FUND || fundId != null)
+    val allowsTag = kind == Kind.INCOME || kind == Kind.EXPENSE
+    val kindTags = tags.filter { it.kind == kind }
+    val effTag = tagId?.takeIf { allowsTag && kindTags.any { t -> t.id == it } }
+    val valid = cents != null && cents > 0 &&
+        accounts.any { it.id == accountId } &&
+        (mode != Mode.FUND || fundId != null) &&
+        (mode != Mode.TRANSFER || (toAccountId != null && toAccountId != accountId))
 
     fun save() {
         if (!valid) return
@@ -84,8 +98,9 @@ fun MovementSheet(
             base.copy(
                 kind = kind,
                 amount = cents!!,
-                account = account,
-                toAccount = if (kind == Kind.TRANSFER) (if (account == Account.BANK) Account.CASH else Account.BANK) else null,
+                accountId = accountId,
+                toAccountId = if (kind == Kind.TRANSFER) toAccountId else null,
+                tagId = effTag,
                 nature = effNature,
                 fundId = if (mode == Mode.FUND) fundId else null,
                 note = note.trim(),
@@ -154,33 +169,45 @@ fun MovementSheet(
                 else -> Unit
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (mode == Mode.TRANSFER) {
-                    val to = if (account == Account.BANK) Account.CASH else Account.BANK
-                    AssistChip(
-                        onClick = { account = to },
-                        label = { Text("${account.label()} → ${to.label()}") },
-                        leadingIcon = { Icon(Icons.Default.SwapHoriz, null, Modifier.size(18.dp)) },
-                    )
-                } else {
-                    val accLabel = if (kind == Kind.SAVE) "Desde" else if (kind == Kind.WITHDRAW) "Hacia" else null
-                    if (accLabel != null) Text(accLabel, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Account.entries.forEach { a ->
-                        FilterChip(selected = account == a, onClick = { account = a }, label = { Text(a.label()) })
+            // Etiqueta
+            if (allowsTag) {
+                ChipRow {
+                    kindTags.forEach { t ->
+                        FilterChip(
+                            selected = effTag == t.id,
+                            onClick = { tagId = if (effTag == t.id) null else t.id },
+                            label = { Text(t.name) },
+                            leadingIcon = {
+                                Box(Modifier.size(8.dp).clip(androidx.compose.foundation.shape.CircleShape).background(tagColor(t.color)))
+                            },
+                        )
                     }
+                    AssistChip(onClick = { newTag = true }, label = { Text("+ Etiqueta") })
                 }
-                Spacer(Modifier.weight(1f))
-                if (allowsFixed) {
-                    FilterChip(
-                        selected = nature == Nature.FIXED,
-                        onClick = { nature = if (nature == Nature.FIXED) Nature.VARIABLE else Nature.FIXED },
-                        label = { Text("Fijo") },
-                    )
+            }
+
+            // Cuenta
+            if (mode == Mode.TRANSFER) {
+                AccountChips("Desde", accounts, accountId) { accountId = it; if (toAccountId == it) toAccountId = accounts.firstOrNull { a -> a.id != it }?.id }
+                AccountChips("Hacia", accounts.filter { it.id != accountId }, toAccountId) { toAccountId = it }
+                if (accounts.size < 2) {
+                    Text("Agrega otra cuenta en la pestaña Cuentas para mover dinero.", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else {
+                AccountChips(
+                    when (kind) { Kind.SAVE -> "Desde"; Kind.WITHDRAW -> "Hacia"; Kind.INCOME -> "Entra a"; else -> "Sale de" },
+                    accounts, accountId,
+                ) { accountId = it }
+            }
+            if (allowsFixed) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Se repite cada mes", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    Switch(checked = nature == Nature.FIXED, onCheckedChange = { nature = if (it) Nature.FIXED else Nature.VARIABLE })
                 }
             }
             if (allowsFixed && nature == Nature.FIXED) {
                 Text(
-                    "Se repite cada mes. Márcalo con ✓ cuando se pague o se reciba.",
+                    "Fijo: aparece cada mes como pendiente; márcalo con ✓ cuando se pague o se reciba.",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -212,6 +239,14 @@ fun MovementSheet(
                 ) { Text(if (ex == null) "Agregar" else "Guardar", fontSize = 16.sp) }
             }
         }
+    }
+
+    if (newTag) {
+        NameDialog(
+            title = "Nueva etiqueta de ${if (kind == Kind.INCOME) "ingreso" else "gasto"}",
+            onDismiss = { newTag = false },
+            onSave = { name -> tagId = onCreateTag(name, kind).id; newTag = false },
+        )
     }
 
     if (confirmDelete && ex != null) {
@@ -285,6 +320,16 @@ private fun Keypad(onKey: (Char) -> Unit, onBackspace: () -> Unit, onClear: () -
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun AccountChips(label: String, accounts: List<MoneyAccount>, selected: String?, onSelect: (String) -> Unit) {
+    ChipRow {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        accounts.forEach { a ->
+            FilterChip(selected = selected == a.id, onClick = { onSelect(a.id) }, label = { Text(a.name) })
         }
     }
 }

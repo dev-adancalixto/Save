@@ -4,7 +4,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.Savings
+import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -34,7 +34,7 @@ fun SaveApp(vm: AppViewModel = viewModel()) {
             NavigationBar(containerColor = MaterialTheme.colorScheme.background, tonalElevation = androidx.compose.ui.unit.Dp(0f)) {
                 listOf(
                     Triple("Mes", Icons.Outlined.CalendarMonth, 0),
-                    Triple("Fondos", Icons.Outlined.Savings, 1),
+                    Triple("Cuentas", Icons.Outlined.AccountBalanceWallet, 1),
                     Triple("Ajustes", Icons.Outlined.Settings, 2),
                 ).forEach { (label, icon, i) ->
                     NavigationBarItem(
@@ -77,6 +77,9 @@ fun SaveApp(vm: AppViewModel = viewModel()) {
                 onWithdraw = { sheet = SheetRequest(kind = Kind.WITHDRAW, fundId = it.id) },
                 onSaveFund = vm::upsertFund,
                 onDeleteFund = { vm.deleteFund(it.id) },
+                onSaveAccount = vm::upsertAccount,
+                onDeleteAccount = { vm.deleteAccount(it.id) },
+                canDeleteAccount = { vm.canDeleteAccount(it.id) },
                 newId = vm::newId,
             )
             else -> SettingsScreen(
@@ -90,6 +93,9 @@ fun SaveApp(vm: AppViewModel = viewModel()) {
                 onExport = vm::exportTo,
                 onImport = vm::importFrom,
                 onMessage = message,
+                onCreateTag = { name, kind -> vm.createTag(name, kind) },
+                onRenameTag = vm::upsertTag,
+                onDeleteTag = { vm.deleteTag(it.id) },
             )
         }
     }
@@ -99,6 +105,10 @@ fun SaveApp(vm: AppViewModel = viewModel()) {
             request = req,
             month = month,
             funds = data.funds,
+            accounts = data.accounts,
+            tags = data.tags,
+            defaultAccountId = vm.defaultAccountId(),
+            onCreateTag = vm::createTag,
             symbol = data.settings.currency,
             newId = vm::newId,
             defaultDay = vm.defaultDay(month),
