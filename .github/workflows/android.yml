@@ -16,8 +16,9 @@ permissions:
   contents: write
 
 concurrency:
-  group: android-${{ github.ref }}
-  cancel-in-progress: true
+  # Las releases (tag o Run workflow) nunca se cancelan.
+  group: android-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
   build:
