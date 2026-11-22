@@ -82,6 +82,8 @@ data class Fund(
     val type: FundType = FundType.SAVINGS,
     /** Meta en centavos; 0 = sin meta. */
     val goal: Long = 0,
+    /** Lo que ya tenía ahorrado antes de registrar (no afecta cuentas ni flujo). */
+    val initial: Long = 0,
 )
 
 @Serializable
@@ -105,7 +107,7 @@ data class AppData(
     val tags: List<Tag> = emptyList(),
 )
 
-const val DATA_VERSION = 2
+const val DATA_VERSION = 3
 const val PALETTE_SIZE = 8
 
 private val defaultExpenseTags = listOf(
@@ -113,9 +115,20 @@ private val defaultExpenseTags = listOf(
 )
 private val defaultIncomeTags = listOf("Sueldo", "Extra")
 
+/** Aporte que entra directo al fondo sin salir de ninguna cuenta (rendimientos, reembolsos). */
+val Movement.isDirect: Boolean get() = kind == Kind.SAVE && accountId.isEmpty()
+
 /** Actualiza datos de versiones anteriores al formato actual. */
 fun AppData.migrated(): AppData {
     if (version >= DATA_VERSION) return this
+    val v2 = if (version >= 2) this else toV2()
+    // v3: etiqueta de ingreso para rendimientos
+    val tags3 = if (v2.tags.any { it.kind == Kind.INCOME && it.name.equals("Rendimientos", true) }) v2.tags
+    else v2.tags + Tag("t-rend", "Rendimientos", Kind.INCOME, v2.tags.count { it.kind == Kind.INCOME } % PALETTE_SIZE)
+    return v2.copy(version = DATA_VERSION, tags = tags3)
+}
+
+private fun AppData.toV2(): AppData {
     val accs = accounts.ifEmpty {
         listOf(
             MoneyAccount("bank", "Banco", Account.BANK, settings.initialBank),
@@ -134,7 +147,7 @@ fun AppData.migrated(): AppData {
             defaultIncomeTags.mapIndexed { i, n -> Tag("t-i$i", n, Kind.INCOME, i % PALETTE_SIZE) }
     }
     return copy(
-        version = DATA_VERSION,
+        version = 2,
         movements = mvs,
         accounts = accs,
         tags = tg,

@@ -33,7 +33,8 @@ data class Totals(val income: Long = 0, val expense: Long = 0, val saved: Long =
     operator fun plus(m: Movement): Totals = when (m.kind) {
         Kind.INCOME -> copy(income = income + m.amount)
         Kind.EXPENSE -> copy(expense = expense + m.amount)
-        Kind.SAVE -> copy(saved = saved + m.amount)
+        // Ingreso directo al fondo: es ingreso y también ahorro (no cambia el flujo)
+        Kind.SAVE -> if (m.isDirect) copy(income = income + m.amount, saved = saved + m.amount) else copy(saved = saved + m.amount)
         Kind.WITHDRAW -> copy(saved = saved - m.amount)
         Kind.TRANSFER -> this
     }
@@ -91,9 +92,9 @@ fun budgetFor(settings: Settings, m: YearMonth): Long? {
 /** Saldos acumulados (solo movimientos reales) hasta `upTo` inclusive; null = todo. */
 fun balances(data: AppData, upTo: YearMonth?): Balances {
     val acc = data.accounts.associate { it.id to it.initial }.toMutableMap()
-    val funds = data.funds.associate { it.id to 0L }.toMutableMap()
+    val funds = data.funds.associate { it.id to it.initial }.toMutableMap()
 
-    fun add(id: String, v: Long) { acc[id] = (acc[id] ?: 0) + v }
+    fun add(id: String, v: Long) { if (id.isNotEmpty()) acc[id] = (acc[id] ?: 0) + v }
 
     for (mv in data.movements) {
         val times = mv.realMonthsUpTo(upTo).size.toLong()
@@ -128,7 +129,7 @@ data class Slice(val tagId: String?, val amount: Long)
 fun breakdown(data: AppData, m: YearMonth, kind: Kind, includePending: Boolean = false): List<Slice> {
     val known = data.tags.map { it.id }.toSet()
     return data.movements
-        .filter { it.kind == kind && (if (includePending) it.appliesTo(m) else it.isRealIn(m)) }
+        .filter { (it.kind == kind || (kind == Kind.INCOME && it.isDirect)) && (if (includePending) it.appliesTo(m) else it.isRealIn(m)) }
         .groupBy { it.tagId?.takeIf { id -> id in known } }
         .map { (tag, list) -> Slice(tag, list.sumOf { it.amount }) }
         .filter { it.amount > 0 }

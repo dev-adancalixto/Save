@@ -284,7 +284,7 @@ fun MovementRow(
     val detail = buildList {
         when (m.kind) {
             Kind.TRANSFER -> add("${look.account(m.accountId)} → ${look.account(m.toAccountId)}")
-            Kind.SAVE -> add("${look.account(m.accountId)} → ${look.fund(m.fundId)}")
+            Kind.SAVE -> add(if (m.isDirect) "Ingreso directo → ${look.fund(m.fundId)}" else "${look.account(m.accountId)} → ${look.fund(m.fundId)}")
             Kind.WITHDRAW -> add("${look.fund(m.fundId)} → ${look.account(m.accountId)}")
             else -> {
                 if (tag != null && m.note.isNotBlank()) add(tag.name)

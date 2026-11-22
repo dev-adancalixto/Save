@@ -138,8 +138,8 @@ fun FundsScreen(
             initial = editing,
             symbol = cur,
             onDismiss = { creating = false; editing = null },
-            onSave = { name, type, goal ->
-                onSaveFund((editing ?: Fund(newId(), name)).copy(name = name, type = type, goal = goal))
+            onSave = { name, type, goal, initial ->
+                onSaveFund((editing ?: Fund(newId(), name)).copy(name = name, type = type, goal = goal, initial = initial))
                 creating = false; editing = null
             },
             onDelete = editing?.let { f -> { onDeleteFund(f); editing = null } },
@@ -152,12 +152,13 @@ private fun FundDialog(
     initial: Fund?,
     symbol: String,
     onDismiss: () -> Unit,
-    onSave: (String, FundType, Long) -> Unit,
+    onSave: (String, FundType, Long, Long) -> Unit,
     onDelete: (() -> Unit)?,
 ) {
     var name by remember { mutableStateOf(initial?.name ?: "") }
     var type by remember { mutableStateOf(initial?.type ?: FundType.SAVINGS) }
     var goal by remember { mutableStateOf(centsToInput(initial?.goal ?: 0)) }
+    var start by remember { mutableStateOf(centsToInput(initial?.initial ?: 0)) }
     var askDelete by remember { mutableStateOf(false) }
 
     AlertDialog(
@@ -167,6 +168,12 @@ private fun FundDialog(
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(name, { name = it }, label = { Text("Nombre") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Segmented(listOf(FundType.SAVINGS to "Ahorro", FundType.EMERGENCY to "Emergencia"), type, { type = it })
+                MoneyField(start, { start = it }, "Ya tenía ahorrado", symbol)
+                Text(
+                    "Lo que ya tenías en este fondo. No se descuenta de tus cuentas ni cambia el flujo.",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 MoneyField(goal, { goal = it }, "Meta (opcional)", symbol)
                 if (askDelete) {
                     Text(
@@ -179,7 +186,7 @@ private fun FundDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onSave(name.trim(), type, Calc.evalCents(goal) ?: 0) },
+                onClick = { onSave(name.trim(), type, Calc.evalCents(goal) ?: 0, Calc.evalCents(start) ?: 0) },
                 enabled = name.isNotBlank(),
             ) { Text("Guardar") }
         },

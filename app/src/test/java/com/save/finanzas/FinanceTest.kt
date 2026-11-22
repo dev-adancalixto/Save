@@ -145,11 +145,38 @@ class FinanceTest {
         assertEquals("cash", old.movements[0].accountId)
         assertEquals("cash", old.movements[1].toAccountId)
         assertTrue(old.tags.isNotEmpty())
+        assertTrue(old.tags.any { it.name == "Rendimientos" })
         val b = balances(old, null)
         assertEquals(6500L, b.bank)
         assertEquals(1800L, b.cash)
         // Volver a migrar no cambia nada
         assertEquals(old, old.migrated())
+    }
+
+    @Test
+    fun fundInitialAndDirectDeposit() {
+        val data = AppData(
+            version = DATA_VERSION,
+            accounts = listOf(MoneyAccount("bbva", "BBVA", Account.BANK, 100000)),
+            funds = listOf(Fund("rev", "Revolut ahorro", initial = 500000)),
+            tags = listOf(Tag("rend", "Rendimientos", Kind.INCOME)),
+            movements = listOf(
+                // Traspaso: sale de BBVA y entra al fondo
+                Movement("1", Kind.SAVE, 20000, accountId = "bbva", fundId = "rev", month = "2026-11"),
+                // Rendimiento directo al fondo
+                Movement("2", Kind.SAVE, 1500, accountId = "", fundId = "rev", tagId = "rend", month = "2026-11"),
+            ),
+        )
+        val s = summarize(data, nov)
+        assertEquals(521500L, s.balances.funds["rev"])
+        assertEquals(80000L, s.balances.bank)
+        assertEquals(1500L, s.real.income)
+        assertEquals(21500L, s.real.saved)
+        // El flujo solo refleja lo que salió de BBVA; el saldo inicial del fondo no lo toca
+        assertEquals(-20000L, s.real.flow)
+        assertEquals(100000L, s.opening)
+        assertEquals(s.balances.available, s.closing)
+        assertEquals(listOf(Slice("rend", 1500)), breakdown(data, nov, Kind.INCOME))
     }
 
     @Test
