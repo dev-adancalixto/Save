@@ -18,8 +18,10 @@ en **efectivo** y en tus **fondos**.
   dinero entre cuentas (por ejemplo, un retiro del cajero).
 - **Etiquetas** para ingresos y gastos (Comida, Transporte, Sueldo…), con una gráfica del
   porcentaje que representa cada una en el mes.
-- **Fondos de ahorro y de emergencia**, con meta opcional y barra de progreso. Los aportes salen
-  de banco o efectivo y los retiros regresan ahí.
+- **Fondos de ahorro y de emergencia**, con meta opcional, barra de progreso y saldo inicial
+  (lo que ya tenías ahorrado; no afecta tus cuentas ni el flujo). Un aporte puede ser un
+  traspaso desde una cuenta o un ingreso directo al fondo (rendimientos, reembolsos). El ingreso
+  directo cuenta como ingreso y como ahorro, así que no cambia el flujo.
 - **Presupuesto mensual:** un límite de gastos con lo que te queda. Aplica al mes en que lo
   defines y a los siguientes.
 - **Saldos acumulados** mes a mes, partiendo del saldo inicial que configures.

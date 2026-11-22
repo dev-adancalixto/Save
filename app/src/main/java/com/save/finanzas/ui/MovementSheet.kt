@@ -62,6 +62,7 @@ fun MovementSheet(
         )
     }
     var withdraw by remember { mutableStateOf(startKind == Kind.WITHDRAW) }
+    var direct by remember { mutableStateOf(ex?.isDirect ?: false) }
     var expr by remember { mutableStateOf(ex?.let { centsToInput(it.amount) } ?: "") }
     var nature by remember { mutableStateOf(ex?.nature ?: Nature.VARIABLE) }
     var accountId by remember { mutableStateOf(ex?.accountId ?: defaultAccountId) }
@@ -82,11 +83,13 @@ fun MovementSheet(
         Mode.TRANSFER -> Kind.TRANSFER
     }
     val allowsFixed = kind == Kind.INCOME || kind == Kind.EXPENSE || kind == Kind.SAVE
-    val allowsTag = kind == Kind.INCOME || kind == Kind.EXPENSE
-    val kindTags = tags.filter { it.kind == kind }
+    val isDirect = kind == Kind.SAVE && direct
+    val allowsTag = kind == Kind.INCOME || kind == Kind.EXPENSE || isDirect
+    val tagKind = if (isDirect) Kind.INCOME else kind
+    val kindTags = tags.filter { it.kind == tagKind }
     val effTag = tagId?.takeIf { allowsTag && kindTags.any { t -> t.id == it } }
     val valid = cents != null && cents > 0 &&
-        accounts.any { it.id == accountId } &&
+        (isDirect || accounts.any { it.id == accountId }) &&
         (mode != Mode.FUND || fundId != null) &&
         (mode != Mode.TRANSFER || (toAccountId != null && toAccountId != accountId))
 
@@ -98,7 +101,7 @@ fun MovementSheet(
             base.copy(
                 kind = kind,
                 amount = cents!!,
-                accountId = accountId,
+                accountId = if (isDirect) "" else accountId,
                 toAccountId = if (kind == Kind.TRANSFER) toAccountId else null,
                 tagId = effTag,
                 nature = effNature,
@@ -152,6 +155,15 @@ fun MovementSheet(
             when (mode) {
                 Mode.FUND -> {
                     Segmented(listOf(false to "Aportar", true to "Retirar"), withdraw, { withdraw = it })
+                    if (!withdraw) {
+                        Segmented(listOf(false to "Desde una cuenta", true to "Ingreso directo"), direct, { direct = it })
+                        Text(
+                            if (direct) "Dinero que entra directo al fondo (rendimientos, reembolsos). Cuenta como ingreso y como ahorro, así que no cambia tu flujo."
+                            else "Traspaso: sale de una de tus cuentas y entra al fondo.",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     if (funds.isEmpty()) {
                         Text(
                             "Primero crea un fondo en la pestaña Fondos.",
@@ -193,7 +205,7 @@ fun MovementSheet(
                 if (accounts.size < 2) {
                     Text("Agrega otra cuenta en la pestaña Cuentas para mover dinero.", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-            } else {
+            } else if (!isDirect) {
                 AccountChips(
                     when (kind) { Kind.SAVE -> "Desde"; Kind.WITHDRAW -> "Hacia"; Kind.INCOME -> "Entra a"; else -> "Sale de" },
                     accounts, accountId,
@@ -243,9 +255,9 @@ fun MovementSheet(
 
     if (newTag) {
         NameDialog(
-            title = "Nueva etiqueta de ${if (kind == Kind.INCOME) "ingreso" else "gasto"}",
+            title = "Nueva etiqueta de ${if (tagKind == Kind.INCOME) "ingreso" else "gasto"}",
             onDismiss = { newTag = false },
-            onSave = { name -> tagId = onCreateTag(name, kind).id; newTag = false },
+            onSave = { name -> tagId = onCreateTag(name, tagKind).id; newTag = false },
         )
     }
 
