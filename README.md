@@ -11,6 +11,12 @@ en **efectivo** y en tus **fondos**.
   y lo real por separado.
 - **Flujo del mes** = ingresos − gastos − lo que mandaste a fondos. Se muestra el real y el
   estimado al cierre del mes, contando los fijos pendientes.
+- **Fecha de pago y recordatorios:** cada fijo tiene su día de pago (el 31 se ajusta en meses
+  más cortos). Ese día llega una notificación a las 9:00 y otra a las 19:00 si sigue pendiente,
+  con un botón *Ya lo pagué* / *Ya lo recibí*. Lo vencido aparece en rojo y se resume cada mañana.
+  Opcionalmente avisa un día antes.
+- **Saldo real por cuenta al capturar:** cada cuenta muestra su saldo al elegirla, y la app avisa
+  si un gasto la dejaría en negativo (por ejemplo, el efectivo que traes).
 - **Saldo que se arrastra:** saldo inicial + flujo = saldo final, y ese saldo final es el saldo
   inicial del mes siguiente.
 - **Varias cuentas** (BBVA, Revolut, Stori, Efectivo…), cada una de tipo banco o efectivo y con

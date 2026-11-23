@@ -27,6 +27,33 @@ fun SaveApp(vm: AppViewModel = viewModel()) {
 
     LaunchedEffect(Unit) { vm.checkForUpdates(silent = true) }
 
+    // Permiso de notificaciones (Android 13+)
+    var notifAllowed by remember { mutableStateOf(vm.canNotify()) }
+    val notifLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { notifAllowed = it || vm.canNotify() }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val requestNotifications: () -> Unit = {
+        if (android.os.Build.VERSION.SDK_INT >= 33 && !vm.canNotify()) {
+            notifLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        } else if (!vm.canNotify()) {
+            // Notificaciones bloqueadas en ajustes del sistema
+            context.startActivity(
+                android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+            )
+        }
+    }
+    var askedNotif by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(data) {
+        val wantsReminders = data.settings.reminders && data.movements.any { it.nature == com.save.finanzas.domain.Nature.FIXED && it.remind }
+        if (wantsReminders && !askedNotif && !vm.canNotify() && android.os.Build.VERSION.SDK_INT >= 33) {
+            askedNotif = true
+            notifLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+    val accountBalances = remember(data) { com.save.finanzas.domain.balances(data, null).accounts }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbar) },
@@ -96,6 +123,8 @@ fun SaveApp(vm: AppViewModel = viewModel()) {
                 onCreateTag = { name, kind -> vm.createTag(name, kind) },
                 onRenameTag = vm::upsertTag,
                 onDeleteTag = { vm.deleteTag(it.id) },
+                notificationsAllowed = notifAllowed,
+                onRequestNotifications = requestNotifications,
             )
         }
     }
@@ -112,6 +141,7 @@ fun SaveApp(vm: AppViewModel = viewModel()) {
             symbol = data.settings.currency,
             newId = vm::newId,
             defaultDay = vm.defaultDay(month),
+            balances = accountBalances,
             onDismiss = { sheet = null },
             onSave = {
                 vm.upsert(it)

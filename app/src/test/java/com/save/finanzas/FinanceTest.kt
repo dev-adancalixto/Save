@@ -180,6 +180,38 @@ class FinanceTest {
     }
 
     @Test
+    fun dueDatesAndReminders() {
+        val netflix = Movement("n", Kind.EXPENSE, 19900, accountId = "bank", nature = Nature.FIXED, month = "2026-10", day = 15)
+        val renta = Movement("r", Kind.EXPENSE, 800000, accountId = "bank", nature = Nature.FIXED, month = "2026-10", day = 31,
+            paidMonths = setOf("2026-10"))
+        val sueldo = Movement("s", Kind.INCOME, 2000000, accountId = "bank", nature = Nature.FIXED, month = "2026-11", day = 24)
+        val callado = netflix.copy(id = "x", remind = false)
+        val base = AppData(version = DATA_VERSION, movements = listOf(netflix, renta, sueldo, callado))
+
+        // El 31 se ajusta al último día del mes
+        assertEquals(java.time.LocalDate.of(2027, 2, 28), renta.dueDate(YearMonth.of(2027, 2)))
+
+        val today = java.time.LocalDate.of(2026, 11, 15)
+        val r = reminders(base, today)
+        // Netflix de noviembre vence hoy; Netflix de octubre quedó vencido; renta de octubre está pagada
+        assertEquals(listOf("n" to DueStatus.TODAY, "n" to DueStatus.OVERDUE), r.map { it.movement.id to it.status })
+        assertEquals(YearMonth.of(2026, 11), r[0].month)
+
+        // Al marcar el de octubre como pagado ya no se recuerda
+        val paid = base.copy(movements = listOf(netflix.copy(paidMonths = setOf("2026-10")), renta, sueldo))
+        assertEquals(1, reminders(paid, today).size)
+
+        // Un día antes solo si se pidió
+        val tomorrow = java.time.LocalDate.of(2026, 11, 23)
+        assertTrue(reminders(paid, tomorrow).none { it.status == DueStatus.TOMORROW })
+        val early = paid.copy(settings = Settings(remindDayBefore = true))
+        assertEquals("s", reminders(early, tomorrow).first { it.status == DueStatus.TOMORROW }.movement.id)
+
+        // Recordatorios apagados
+        assertTrue(reminders(base.copy(settings = Settings(reminders = false)), today).isEmpty())
+    }
+
+    @Test
     fun versions() {
         assertTrue(compareVersions("v1.2.0", "1.1.9") > 0)
         assertTrue(compareVersions("1.0.0", "1.0.0-dev") > 0)
