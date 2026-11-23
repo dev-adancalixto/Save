@@ -11,6 +11,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -35,6 +36,8 @@ fun SettingsScreen(
     onCreateTag: (String, Kind) -> Unit,
     onRenameTag: (Tag) -> Unit,
     onDeleteTag: (Tag) -> Unit,
+    notificationsAllowed: Boolean,
+    onRequestNotifications: () -> Unit,
 ) {
     val s = data.settings
     val context = LocalContext.current
@@ -87,6 +90,34 @@ fun SettingsScreen(
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+
+        SectionLabel("Recordatorios", Modifier.padding(top = 16.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Avisar el día de pago", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "Notificación a las 9:00 y, si sigue pendiente, a las 19:00. Los vencidos se resumen cada mañana.",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(checked = s.reminders, onCheckedChange = {
+                onSaveSettings(s.copy(reminders = it))
+                if (it) onRequestNotifications()
+            })
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Avisar también un día antes", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            Switch(checked = s.remindDayBefore, enabled = s.reminders, onCheckedChange = { onSaveSettings(s.copy(remindDayBefore = it)) })
+        }
+        if (s.reminders && !notificationsAllowed) {
+            Text(
+                "Las notificaciones están desactivadas para Save. Actívalas para recibir los recordatorios.",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+            OutlinedButton(onClick = onRequestNotifications, modifier = Modifier.fillMaxWidth()) { Text("Permitir notificaciones") }
+        }
 
         SectionLabel("Etiquetas", Modifier.padding(top = 16.dp))
         Text(

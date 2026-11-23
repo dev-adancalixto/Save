@@ -230,7 +230,7 @@ fun MonthScreen(
         if (s.fixed.isNotEmpty()) {
             item { SectionLabel("Fijos del mes", Modifier.padding(top = 12.dp)) }
             items(s.fixed, key = { "f" + it.movement.id }) { e ->
-                MovementRow(e, cur, look, onClick = { onOpen(e.movement) }, onToggle = { onTogglePaid(e.movement) })
+                MovementRow(e, cur, look, onClick = { onOpen(e.movement) }, onToggle = { onTogglePaid(e.movement) }, month = month)
             }
         }
 
@@ -271,8 +271,10 @@ fun MovementRow(
     look: Lookup,
     onClick: () -> Unit,
     onToggle: (() -> Unit)?,
+    month: YearMonth? = null,
 ) {
     val m = e.movement
+    val status = if (m.nature == Nature.FIXED && month != null) m.dueStatus(month, java.time.LocalDate.now()) else null
     val color = kindColor(m.kind)
     val tag = look.tag(m.tagId)
     val title = m.note.ifBlank {
@@ -291,9 +293,17 @@ fun MovementRow(
                 add(look.account(m.accountId))
             }
         }
-        if (m.nature == Nature.VARIABLE) add("día ${m.day}")
-        if (e.pending) add("pendiente")
+        val verb = if (m.kind == Kind.INCOME) "llega" else "vence"
+        when (status) {
+            null -> add("día ${m.day}")
+            DueStatus.PAID -> add("día ${month?.let { m.dueDate(it).dayOfMonth } ?: m.day}")
+            DueStatus.TODAY -> add("$verb hoy")
+            DueStatus.TOMORROW -> add("$verb mañana")
+            DueStatus.OVERDUE -> add("vencido el ${m.dueDate(month!!).dayOfMonth}")
+            DueStatus.UPCOMING -> add("$verb el ${m.dueDate(month!!).dayOfMonth}")
+        }
     }.joinToString(" · ")
+    val urgent = status == DueStatus.OVERDUE || status == DueStatus.TODAY
 
     Row(
         Modifier
@@ -321,7 +331,14 @@ fun MovementRow(
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(detail, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                detail,
+                style = MaterialTheme.typography.labelMedium,
+                color = if (urgent) Tone.expense else MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = if (urgent) FontWeight.SemiBold else FontWeight.Normal,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
         val signed = m.kind.sign() * m.amount
         Text(

@@ -73,6 +73,8 @@ data class Movement(
     val fundId: String? = null,
     val note: String = "",
     val createdAt: Long = 0,
+    /** Fijos: avisar con una notificación el día de pago. */
+    val remind: Boolean = true,
 )
 
 @Serializable
@@ -95,6 +97,10 @@ data class Settings(
     val initialCash: Long = 0,
     /** Presupuesto de gastos por mes ("yyyy-MM" -> centavos). Aplica también a los meses siguientes. */
     val budgets: Map<String, Long> = emptyMap(),
+    /** Notificaciones de pagos e ingresos fijos. */
+    val reminders: Boolean = true,
+    /** Avisar también un día antes. */
+    val remindDayBefore: Boolean = false,
 )
 
 @Serializable

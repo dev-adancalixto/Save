@@ -1,6 +1,7 @@
 package com.save.finanzas.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.horizontalScroll
@@ -44,6 +45,8 @@ fun MovementSheet(
     symbol: String,
     newId: () -> String,
     defaultDay: Int,
+    /** Saldo actual de cada cuenta, para mostrarlo al elegirla. */
+    balances: Map<String, Long>,
     onDismiss: () -> Unit,
     onSave: (Movement) -> Unit,
     onDelete: (Movement) -> Unit,
@@ -73,6 +76,9 @@ fun MovementSheet(
     var newTag by remember { mutableStateOf(false) }
     var fundId by remember { mutableStateOf(ex?.fundId ?: request.fundId ?: funds.firstOrNull()?.id) }
     var note by remember { mutableStateOf(ex?.note ?: "") }
+    var day by remember { mutableIntStateOf(ex?.day ?: defaultDay) }
+    var remind by remember { mutableStateOf(ex?.remind ?: true) }
+    var pickDay by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
 
     val cents = Calc.evalCents(expr)
@@ -107,6 +113,8 @@ fun MovementSheet(
                 nature = effNature,
                 fundId = if (mode == Mode.FUND) fundId else null,
                 note = note.trim(),
+                day = day,
+                remind = remind,
                 // Al convertir variable → fijo empieza en el mes del movimiento
                 endMonth = if (effNature == Nature.FIXED) base.endMonth else null,
                 paidMonths = if (effNature == Nature.FIXED) base.paidMonths else emptySet(),
@@ -200,16 +208,26 @@ fun MovementSheet(
 
             // Cuenta
             if (mode == Mode.TRANSFER) {
-                AccountChips("Desde", accounts, accountId) { accountId = it; if (toAccountId == it) toAccountId = accounts.firstOrNull { a -> a.id != it }?.id }
-                AccountChips("Hacia", accounts.filter { it.id != accountId }, toAccountId) { toAccountId = it }
+                AccountChips("Desde", accounts, accountId, balances, symbol) { accountId = it; if (toAccountId == it) toAccountId = accounts.firstOrNull { a -> a.id != it }?.id }
+                AccountChips("Hacia", accounts.filter { it.id != accountId }, toAccountId, balances, symbol) { toAccountId = it }
                 if (accounts.size < 2) {
                     Text("Agrega otra cuenta en la pestaña Cuentas para mover dinero.", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else if (!isDirect) {
                 AccountChips(
                     when (kind) { Kind.SAVE -> "Desde"; Kind.WITHDRAW -> "Hacia"; Kind.INCOME -> "Entra a"; else -> "Sale de" },
-                    accounts, accountId,
+                    accounts, accountId, balances, symbol,
                 ) { accountId = it }
+            }
+            // Aviso si el dinero no alcanza en esa cuenta (solo al capturar algo nuevo)
+            val outflow = kind == Kind.EXPENSE || kind == Kind.TRANSFER || (kind == Kind.SAVE && !isDirect)
+            val left = (balances[accountId] ?: 0) - (cents ?: 0)
+            if (ex == null && outflow && cents != null && cents > 0 && left < 0) {
+                Text(
+                    "Te quedarían ${formatMoney(left, symbol)} en ${accounts.firstOrNull { it.id == accountId }?.name ?: "esa cuenta"}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Tone.expense,
+                )
             }
             if (allowsFixed) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -217,12 +235,27 @@ fun MovementSheet(
                     Switch(checked = nature == Nature.FIXED, onCheckedChange = { nature = if (it) Nature.FIXED else Nature.VARIABLE })
                 }
             }
-            if (allowsFixed && nature == Nature.FIXED) {
+            val isFixed = allowsFixed && nature == Nature.FIXED
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "Fijo: aparece cada mes como pendiente; márcalo con ✓ cuando se pague o se reciba.",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    if (isFixed) (if (kind == Kind.INCOME) "Día en que llega" else "Día de pago") else "Día",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f),
                 )
+                OutlinedButton(onClick = { pickDay = true }) { Text(if (isFixed) "Cada día $day" else "$day de ${monthTitle(month).substringBefore(' ').lowercase()}") }
+            }
+            if (isFixed) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Recordármelo ese día", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "Te llega una notificación para marcarlo como ${if (kind == Kind.INCOME) "recibido" else "pagado"}.",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = remind, onCheckedChange = { remind = it })
+                }
             }
 
             OutlinedTextField(
@@ -251,6 +284,15 @@ fun MovementSheet(
                 ) { Text(if (ex == null) "Agregar" else "Guardar", fontSize = 16.sp) }
             }
         }
+    }
+
+    if (pickDay) {
+        DayPickerDialog(
+            selected = day,
+            maxDay = if (allowsFixed && nature == Nature.FIXED) 31 else month.lengthOfMonth(),
+            onDismiss = { pickDay = false },
+            onPick = { day = it; pickDay = false },
+        )
     }
 
     if (newTag) {
@@ -337,11 +379,65 @@ private fun Keypad(onKey: (Char) -> Unit, onBackspace: () -> Unit, onClear: () -
 }
 
 @Composable
-private fun AccountChips(label: String, accounts: List<MoneyAccount>, selected: String?, onSelect: (String) -> Unit) {
+private fun AccountChips(
+    label: String,
+    accounts: List<MoneyAccount>,
+    selected: String?,
+    balances: Map<String, Long>,
+    symbol: String,
+    onSelect: (String) -> Unit,
+) {
     ChipRow {
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         accounts.forEach { a ->
-            FilterChip(selected = selected == a.id, onClick = { onSelect(a.id) }, label = { Text(a.name) })
+            FilterChip(
+                selected = selected == a.id,
+                onClick = { onSelect(a.id) },
+                label = { Text("${a.name} · ${formatMoney(balances[a.id] ?: 0, symbol)}") },
+            )
         }
     }
+}
+
+@Composable
+private fun DayPickerDialog(selected: Int, maxDay: Int, onDismiss: () -> Unit, onPick: (Int) -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Elige el día") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                (1..maxDay).chunked(7).forEach { week ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        week.forEach { d ->
+                            val on = d == selected
+                            Box(
+                                Modifier
+                                    .weight(1f)
+                                    .aspectRatio(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainer)
+                                    .clickable { onPick(d) },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    d.toString(),
+                                    color = if (on) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                        }
+                        repeat(7 - week.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
+                if (maxDay == 31) {
+                    Text(
+                        "En meses más cortos se usa el último día.",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Cerrar") } },
+    )
 }

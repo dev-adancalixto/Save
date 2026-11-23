@@ -13,16 +13,19 @@ class Store(dir: File) {
         if (file.exists()) json.decodeFromString<AppData>(file.readText()) else AppData()
     }.getOrElse { AppData() }
 
-    @Synchronized
-    fun save(data: AppData) {
+    fun save(data: AppData) = synchronized(lock) {
         tmp.writeText(json.encodeToString(AppData.serializer(), data))
         if (!tmp.renameTo(file)) {
             file.delete()
             tmp.renameTo(file)
         }
+        Unit
     }
 
     companion object {
+        /** Un solo candado para la app, el worker y el receptor de notificaciones. */
+        val lock = Any()
+
         val json = Json {
             ignoreUnknownKeys = true
             encodeDefaults = true

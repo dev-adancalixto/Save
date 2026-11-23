@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.save.finanzas.BuildConfig
 import com.save.finanzas.data.Store
 import com.save.finanzas.domain.*
+import com.save.finanzas.notify.Notifier
 import com.save.finanzas.update.Release
 import com.save.finanzas.update.Updater
 import com.save.finanzas.update.compareVersions
@@ -50,10 +51,26 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     val currentVersion: String = BuildConfig.VERSION_NAME
 
+    private val edits = java.util.concurrent.atomic.AtomicInteger(0)
+
     private fun edit(f: (AppData) -> AppData) {
+        edits.incrementAndGet()
         _data.value = f(_data.value)
         viewModelScope.launch(Dispatchers.IO) { saveLock.withLock { store.save(_data.value) } }
     }
+
+    /** Vuelve a leer el archivo (lo pudo cambiar una notificación). Nunca pisa ediciones recientes. */
+    fun reload() {
+        val stamp = edits.get()
+        viewModelScope.launch(Dispatchers.IO) {
+            saveLock.withLock {
+                val fresh = store.load().migrated()
+                if (edits.get() == stamp && fresh != _data.value) _data.value = fresh
+            }
+        }
+    }
+
+    fun canNotify(): Boolean = Notifier.canNotify(getApplication())
 
     // ---- Mes ----
     fun prevMonth() { _month.value = _month.value.minusMonths(1) }
